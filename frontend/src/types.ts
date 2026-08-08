@@ -57,12 +57,16 @@ export interface StatementDetail extends StatementListItem {
 
   period_type: "single_period" | "multi_year" | "unknown" | null;
   periods_covered: string | null;
+  language_detected: "english" | "french" | "bilingual_en_fr" | "other" | "unknown" | null;
+  structure_note: string | null;
+  unit_scale_note: string | null;
+  unit_scale_uncertain: boolean;
   assurance_level: "compilation" | "review" | "audit" | "none" | "unknown" | null;
   assurance_standard: string | null;
   assurance_quote: string | null;
   assurance_quote_page: number | null;
   assurance_verified: boolean;
-  detailed_summary: string | null;
+  summary_sections: Record<string, string>;
   ratios: Ratio[];
 }
 
@@ -119,4 +123,25 @@ export interface DashboardMetrics {
   last_audit_at: string | null;
   quality_trend: { label: string; score: number; uploaded_at: string }[];
   recent_statements: StatementListItem[];
+}
+
+export interface ExecutiveDashboard {
+  total_statements: number;
+  processing_count: number;
+  processed_count: number;
+  quarantined_count: number;
+  error_count: number;
+  avg_quality_score: number | null;
+  citation_verification_rate: number | null;
+  total_citations_captured: number;
+  quarantine_resolution_rate: number | null;
+  total_quarantine_items: number;
+  assurance_level_breakdown: Record<string, number>;
+  period_type_breakdown: Record<string, number>;
+  quality_trend: {
+    label: string;
+    quality_score: number;
+    citation_coverage_score: number | null;
+    uploaded_at: string;
+  }[];
 }

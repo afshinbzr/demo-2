@@ -7,6 +7,7 @@ import Upload from "./pages/Upload";
 import StatementDetail from "./pages/StatementDetail";
 import Quarantine from "./pages/Quarantine";
 import Admin from "./pages/Admin";
+import ExecutiveOverview from "./pages/ExecutiveOverview";
 
 function Protected({ children, minRole = "viewer" }: { children: ReactNode; minRole?: string }) {
   const { user, loading } = useAuth();
@@ -22,10 +23,14 @@ function Layout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <header className="topbar">
         <div style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
-          <span className="brand">📊 Statement Governance</span>
+          <span className="brand-logo">
+            <img src="/dc-logo-white.svg" alt="DC" />
+          </span>
+          <span className="brand">Statement Governance</span>
           {user && (
             <nav>
               <NavLink to="/">Dashboard</NavLink>
+              {hasRole(user, "steward") && <NavLink to="/executive">Executive</NavLink>}
               {hasRole(user, "editor") && <NavLink to="/upload">Upload</NavLink>}
               {hasRole(user, "steward") && <NavLink to="/quarantine">Quarantine</NavLink>}
               {hasRole(user, "steward") && <NavLink to="/admin">Admin</NavLink>}
@@ -77,6 +82,16 @@ function AppRoutes() {
           <Protected>
             <Layout>
               <StatementDetail />
+            </Layout>
+          </Protected>
+        }
+      />
+      <Route
+        path="/executive"
+        element={
+          <Protected minRole="steward">
+            <Layout>
+              <ExecutiveOverview />
             </Layout>
           </Protected>
         }

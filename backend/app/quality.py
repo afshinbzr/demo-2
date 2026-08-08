@@ -13,7 +13,13 @@ from sqlalchemy.orm import Session
 from .data_dictionary import REQUIRED_FIELDS, VALID_CURRENCIES
 from .models import LineItem, Quarantine, Statement
 
-PERIOD_RE = re.compile(r"^(FY)?\d{4}(-?Q[1-4])?$", re.IGNORECASE)
+# Real statements label periods in many valid ways - "FY2026", "Q3 2024",
+# "H1 2026", "As at June 26, 2026", "Six months ended June 27, 2025",
+# "Exercice clos le 31 décembre 2025". The check that actually matters for a
+# credit analyst is that the period identifies a *year*; anything with a
+# 4-digit year is accepted. A stricter pattern flooded the quarantine queue
+# with false positives on perfectly good multi-year statements.
+PERIOD_RE = re.compile(r"(19|20)\d{2}")
 
 # Fields that should never be negative in a well-formed statement.
 NON_NEGATIVE_FIELDS = {
@@ -77,7 +83,25 @@ def run_quality_checks(
             _add_quarantine(db, statement, reason_code, detail, line_item=line_item)
 
     active_items = [li for li in line_items if not li.is_deleted]
-    by_field = {li.field_name: li for li in active_items}
+    # First occurrence per field = the most recent period (the extraction
+    # prompt emits current period before comparatives). Cross-field checks
+    # below must compare within ONE period - a dict built last-wins would
+    # silently mix this year's assets with last year's equity on a
+    # multi-year statement.
+    by_field: dict[str, LineItem] = {}
+    for li in active_items:
+        by_field.setdefault(li.field_name, li)
+
+    # --- 0. Unit scale ambiguity (spec: inconsistent units can distort an
+    # entire credit analysis) - the AI itself flagged uncertainty reconciling
+    # a scale mismatch (e.g. one section "in thousands", another in whole
+    # dollars) rather than silently guessing.
+    if statement.unit_scale_uncertain:
+        maybe_quarantine(
+            "unit_scale_uncertain",
+            statement.unit_scale_note or "The AI was not confident about the reporting unit scale "
+            "(raw dollars vs. thousands vs. millions) used in this document.",
+        )
 
     # --- 1. Completeness ---
     present_required = REQUIRED_FIELDS & set(by_field.keys())
@@ -116,12 +140,12 @@ def run_quality_checks(
                 )
         if li.period:
             validity_checks += 1
-            if PERIOD_RE.match(li.period.strip()):
+            if PERIOD_RE.search(li.period.strip()):
                 validity_passed += 1
             else:
                 maybe_quarantine(
                     "invalid_period_format",
-                    f"Field '{li.field_name}' has an unrecognized period format: '{li.period}'.",
+                    f"Field '{li.field_name}' has a period with no identifiable year: '{li.period}'.",
                     line_item=li,
                 )
 

@@ -98,6 +98,19 @@ a {
   font-size: 1.05rem;
 }
 
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  background: #0b1e33;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.brand-logo img {
+  height: 22px;
+  display: block;
+}
+
 .user-chip {
   font-size: 0.85rem;
   color: var(--text-secondary);
@@ -409,4 +422,66 @@ input, select, textarea {
 
 .summary-prose p {
   margin: 0 0 0.85rem;
+}
+
+.hover-tooltip-trigger {
+  border-bottom: 1px dashed var(--text-muted);
+  cursor: help;
+}
+
+.hover-tooltip-popup {
+  position: fixed;
+  z-index: 1000;
+  max-width: 340px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 0.82rem;
+  font-weight: 400;
+  white-space: normal;
+  color: var(--text-primary);
+}
+
+.hover-tooltip-popup .tt-status {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.hover-tooltip-popup .tt-quote {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.summary-card-title {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.summary-card-text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.red-flags-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.red-flags-list li {
+  margin-bottom: 0.35rem;
 }

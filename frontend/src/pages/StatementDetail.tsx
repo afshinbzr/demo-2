@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api";
-import type { LineItem, Ratio, StatementDetail as StatementDetailType } from "../types";
+import type { Citation, LineItem, Ratio, StatementDetail as StatementDetailType } from "../types";
 import StatusPill from "../components/StatusPill";
 import ClassificationPill from "../components/ClassificationPill";
+import HoverTooltip from "../components/HoverTooltip";
 import { hasRole, useAuth } from "../AuthContext";
 import { ASSURANCE_STANDARDS } from "../assuranceStandards";
 
@@ -11,6 +12,24 @@ function formatValue(li: LineItem): string {
   if (li.value === null) return "—";
   const formatted = Math.abs(li.value) >= 1000 ? li.value.toLocaleString() : li.value.toString();
   return `${formatted}${li.unit ? " " + li.unit : ""}`;
+}
+
+function CitationTooltipContent({ citations }: { citations: Citation[] }) {
+  if (citations.length === 0) {
+    return <p className="muted" style={{ margin: 0 }}>No source quote captured for this value.</p>;
+  }
+  return (
+    <>
+      {citations.map((c) => (
+        <div key={c.id} style={{ marginBottom: "0.4rem" }}>
+          <div className={`tt-status ${c.verified ? "confidence-high" : "confidence-medium"}`}>
+            {c.verified ? `✓ Verified — Page ${c.page_number}` : "⚠ Unverified — AI-reported"}
+          </div>
+          <div className="tt-quote">"{c.cited_text}"</div>
+        </div>
+      ))}
+    </>
+  );
 }
 
 function formatRatioValue(r: Ratio): string {
@@ -27,6 +46,21 @@ const RATIO_CATEGORY_LABELS: Record<string, string> = {
   coverage: "Coverage",
 };
 const RATIO_CATEGORY_ORDER = ["liquidity", "leverage", "profitability", "coverage"];
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  english: "English",
+  french: "French",
+  bilingual_en_fr: "Bilingual (English/French)",
+  other: "Other language",
+  unknown: "Unknown",
+};
+
+const SUMMARY_SECTION_META: Record<string, { label: string; icon: string }> = {
+  PROFITABILITY_SUMMARY: { label: "Profitability", icon: "📈" },
+  LIQUIDITY_SUMMARY: { label: "Liquidity", icon: "💧" },
+  LEVERAGE_SUMMARY: { label: "Leverage & Solvency", icon: "⚖️" },
+  CASH_FLOW_SUMMARY: { label: "Cash Flow", icon: "💵" },
+};
 
 export default function StatementDetail() {
   const { id } = useParams();
@@ -125,6 +159,30 @@ export default function StatementDetail() {
           </div>
           <div className="muted">{statement.periods_covered ?? "Periods not identified"}</div>
         </div>
+
+        <div className="info-badge">
+          <div className="label">Document Format &amp; Language</div>
+          <div className="headline">
+            {LANGUAGE_LABELS[statement.language_detected ?? "unknown"] ?? "Unknown"}
+          </div>
+          {statement.structure_note && (
+            <p className="muted" style={{ marginTop: "0.4rem" }}>
+              <strong>Format:</strong> {statement.structure_note}
+            </p>
+          )}
+          {statement.unit_scale_note && (
+            <p
+              className={statement.unit_scale_uncertain ? "" : "muted"}
+              style={{
+                marginTop: "0.4rem",
+                color: statement.unit_scale_uncertain ? "var(--status-critical)" : undefined,
+                fontWeight: statement.unit_scale_uncertain ? 600 : undefined,
+              }}
+            >
+              <strong>Units:</strong> {statement.unit_scale_note}
+            </p>
+          )}
+        </div>
       </div>
 
       {statement.status === "error" && (
@@ -205,16 +263,47 @@ export default function StatementDetail() {
         )}
       </div>
 
-      {statement.detailed_summary && (
-        <div className="card" style={{ marginBottom: "1.5rem" }}>
-          <div className="section-title" style={{ marginTop: 0 }}>
+      {Object.keys(statement.summary_sections).length > 0 && (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <div className="section-title" style={{ marginTop: 0, marginBottom: "0.75rem" }}>
             Detailed summary — for evaluation, audit &amp; decision making
           </div>
-          <div className="summary-prose">
-            {statement.detailed_summary.split(/\n{2,}/).map((para, i) => (
-              <p key={i}>{para}</p>
-            ))}
+
+          <div className="summary-grid">
+            {Object.entries(SUMMARY_SECTION_META).map(([key, meta]) => {
+              const text = statement.summary_sections[key];
+              if (!text) return null;
+              return (
+                <div className="card summary-card" key={key}>
+                  <div className="summary-card-title">
+                    <span>{meta.icon}</span> {meta.label}
+                  </div>
+                  <p className="summary-card-text">{text}</p>
+                </div>
+              );
+            })}
           </div>
+
+          {statement.summary_sections.RED_FLAGS && (
+            <div className="card" style={{ marginTop: "1rem", borderColor: "var(--status-warning)" }}>
+              <div className="summary-card-title">🚩 Red Flags / Watch Items</div>
+              <ul className="red-flags-list">
+                {statement.summary_sections.RED_FLAGS.split("\n")
+                  .map((line) => line.replace(/^-\s*/, "").trim())
+                  .filter(Boolean)
+                  .map((flag, i) => (
+                    <li key={i}>{flag}</li>
+                  ))}
+              </ul>
+            </div>
+          )}
+
+          {statement.summary_sections.OVERALL_ASSESSMENT && (
+            <div className="card" style={{ marginTop: "1rem", borderColor: "var(--series-1)" }}>
+              <div className="summary-card-title">✅ Overall Assessment</div>
+              <p className="summary-card-text">{statement.summary_sections.OVERALL_ASSESSMENT}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -242,7 +331,11 @@ export default function StatementDetail() {
                   }}
                 >
                   <td>{li.raw_label ?? li.field_name}</td>
-                  <td>{formatValue(li)}</td>
+                  <td>
+                    <HoverTooltip content={<CitationTooltipContent citations={li.citations} />}>
+                      {formatValue(li)}
+                    </HoverTooltip>
+                  </td>
                   <td>{li.period ?? "—"}</td>
                   <td className={`confidence-${li.confidence}`}>
                     {li.confidence}

@@ -33,6 +33,7 @@ MODEL = "claude-opus-5"
 HEADER_KEYS = (
     "COMPANY", "STATEMENT_TYPE", "FISCAL_PERIOD", "CURRENCY",
     "PERIOD_TYPE", "PERIODS_COVERED", "ASSURANCE_LEVEL", "ASSURANCE_STANDARD",
+    "LANGUAGE_DETECTED", "STRUCTURE_NOTE", "UNIT_SCALE_NOTE",
 )
 HEADER_RE = re.compile(r"^(" + "|".join(HEADER_KEYS) + r"):\s*(.+)$")
 # Tolerate an occasional stray "FIELD_NAME: " / "FIELD: " prefix the model
@@ -43,9 +44,17 @@ FIELD_LINE_RE = re.compile(
 QUOTE_LINE_RE = re.compile(r"^QUOTE:\s*(.*)$")
 ASSURANCE_QUOTE_LINE_RE = re.compile(r"^ASSURANCE_QUOTE:\s*(.*)$")
 
+SUMMARY_SECTION_KEYS = (
+    "PROFITABILITY_SUMMARY", "LIQUIDITY_SUMMARY", "LEVERAGE_SUMMARY",
+    "CASH_FLOW_SUMMARY", "RED_FLAGS", "OVERALL_ASSESSMENT",
+)
+SUMMARY_SECTION_RE = re.compile(r"^(" + "|".join(SUMMARY_SECTION_KEYS) + r"):\s*(.*)$")
+
 SYSTEM_PROMPT = """You are a financial-statement data extraction analyst supporting a commercial \
-lender's credit evaluation. You will be given a financial statement as a PDF. Extract the data \
-precisely and output ONLY in the exact format specified below - no other commentary.
+lender's credit evaluation. You will be given a financial statement as a PDF, which may be in \
+English, French, or bilingual, and may mix formats within one document (e.g. multi-year tables, \
+single-period statements, and narrative MD&A prose together). Extract the data precisely and \
+output ONLY in the exact format specified below - no other commentary.
 
 First, these header lines, one fact per line:
 COMPANY: <company name>
@@ -56,6 +65,15 @@ PERIOD_TYPE: <single_period if only one period's figures are presented, multi_ye
 statement shows two or more periods/years side by side for comparison>
 PERIODS_COVERED: <comma-separated list of every distinct period/year presented, most recent \
 first, e.g. "FY2026, FY2025">
+LANGUAGE_DETECTED: <one of: english, french, bilingual_en_fr, other>
+STRUCTURE_NOTE: <one sentence flagging any inconsistent formatting within this document - e.g. \
+"Primary statements are single-period but Note 12 discloses a 5-year table" or "Combines \
+tabular statements with narrative MD&A discussion of the same figures". Write "consistent \
+format throughout" if there is nothing to flag.>
+UNIT_SCALE_NOTE: <one sentence on the reporting scale - e.g. "All statements in thousands of \
+CAD, consistently" or, if you had to reconcile a genuine mismatch, prefix with "UNCERTAIN: " and \
+explain, e.g. "UNCERTAIN: income statement says (in thousands) but the note disclosures appear \
+to be in whole dollars - verify before use">
 ASSURANCE_LEVEL: <one of: compilation, review, audit, none, unknown - see rules below>
 ASSURANCE_STANDARD: <the standard named in the accountant's report, e.g. "CSRS 4200", \
 "CSRE 2400", or the audit standard named; "n/a" if ASSURANCE_LEVEL is none or unknown>
@@ -64,11 +82,12 @@ Determining ASSURANCE_LEVEL - read the accountant's report / notice to reader / 
 report page (if one exists) and classify by what it actually says, not by guessing from the \
 company's size:
 - "compilation": an accountant's Notice to Reader or compilation report is attached, disclaiming \
-any assurance (governed in Canada by CSRS 4200, which replaced old Section 9200).
+any assurance (governed in Canada by CSRS 4200, which replaced old Section 9200). In French this \
+may appear as "Avis au lecteur" or "Mission de compilation".
 - "review": a review engagement report is attached, describing limited assurance (governed in \
-Canada by CSRE 2400).
+Canada by CSRE 2400). In French: "Mission d'examen".
 - "audit": an independent auditor's report is attached expressing an opinion (full/reasonable \
-assurance).
+assurance). In French: "Rapport de l'auditeur indépendant".
 - "none": the statements are explicitly labelled "unaudited" or "management-prepared" with NO \
 accountant's report of any kind attached (common for internal or interim statements).
 - "unknown": you cannot tell either way from the document.
@@ -92,6 +111,34 @@ Use ONLY these field names (uppercase, only the ones you can actually find - ski
 present in the document, do not guess or invent a value):
 {fields}
 
+The source label will often NOT match the field name in English or in this exact wording -
+map by MEANING, in either language, including these common synonyms (not exhaustive - use \
+judgment for others):
+- REVENUE: Sales, Net sales, Turnover, Total revenue ↔ Chiffre d'affaires, Ventes, Produits, \
+Produits des activités ordinaires
+- COST_OF_GOODS_SOLD: Cost of sales, Cost of revenue ↔ Coût des marchandises vendues, \
+Coût des ventes
+- GROSS_PROFIT: Gross margin ↔ Bénéfice brut, Marge brute
+- OPERATING_EXPENSES: Total operating expenses, SG&A ↔ Charges d'exploitation, Frais \
+d'exploitation
+- OPERATING_INCOME: Income from operations, EBIT ↔ Résultat d'exploitation, Bénéfice \
+d'exploitation
+- NET_INCOME: Net earnings, Profit for the period ↔ Bénéfice net, Résultat net
+- TOTAL_ASSETS ↔ Total de l'actif, Actif total
+- TOTAL_LIABILITIES ↔ Total du passif, Passif total
+- TOTAL_EQUITY: Shareholders' equity, Stockholders' equity ↔ Capitaux propres, Avoir des \
+actionnaires
+- CASH_AND_EQUIVALENTS: Cash, Cash on hand ↔ Trésorerie et équivalents de \
+trésorerie, Encaisse
+- TOTAL_CURRENT_ASSETS ↔ Actif à court terme, Actif courant
+- TOTAL_CURRENT_LIABILITIES ↔ Passif à court terme, Passif courant
+- OPERATING_CASH_FLOW: Cash from operations ↔ Flux de trésorerie liés aux \
+activités d'exploitation
+- INVENTORY: Stock ↔ Stocks
+- INTEREST_EXPENSE: Finance costs ↔ Frais financiers, Charges d'intérêts
+If the document itself is in French, keep company names and your QUOTE excerpts in the original \
+French text - only the FIELD_NAME keys and your narrative sections are in English.
+
 Rules:
 - One fact per field-name/QUOTE pair, and each fact must be a number you can point to \
 verbatim in the source document via its QUOTE line - this lets us verify it.
@@ -106,12 +153,18 @@ e.g. "Net sales   160,223"), not a whole sentence.
 - unit is the currency code repeated, or "shares" for share counts, or blank for per-share/ratio figures.
 - period is the fiscal period this specific number applies to.
 
-Next, output one line "SUMMARY:" followed by a detailed, multi-paragraph narrative written for \
-a lender evaluating this business for credit - cover: profitability (margins, trend if \
-multi-year), liquidity, leverage/solvency, cash flow adequacy, and any red flags a lender should \
-know about (e.g. thin margins, declining trend, high leverage, going-concern language, related-\
-party transactions). Be specific and cite the actual numbers. If PERIOD_TYPE is multi_year, \
-explicitly discuss the trend between periods. End with a one-paragraph overall assessment.
+Next, output these narrative sections, each on its own line(s), for a lender evaluating this \
+business for credit - keep each section to 2-4 tight sentences (not a sprawling essay), be \
+specific and cite the actual numbers:
+PROFITABILITY_SUMMARY: <margins, and the trend between periods if multi_year>
+LIQUIDITY_SUMMARY: <ability to cover short-term obligations>
+LEVERAGE_SUMMARY: <debt levels, solvency, coverage>
+CASH_FLOW_SUMMARY: <cash generation vs. net income, investing/financing activity>
+RED_FLAGS: <one bullet per line starting with "- ", each a specific concern a lender should \
+know about (e.g. thin/declining margins, high leverage, going-concern language, related-party \
+transactions, demand-callable debt, receivables growing faster than sales). Write "- none \
+identified" if there is nothing notable.>
+OVERALL_ASSESSMENT: <one tight paragraph: your bottom-line take for a credit decision>
 
 Finally, output one line "NOTES:" followed by a bulleted list of any judgment calls, ambiguous \
 labels, assumptions, or things a human reviewer should double check (e.g. "no separate COGS line \
@@ -150,11 +203,15 @@ class ExtractionResult:
     currency: str | None
     period_type: str | None
     periods_covered: str | None
+    language_detected: str | None
+    structure_note: str | None
+    unit_scale_note: str | None
+    unit_scale_uncertain: bool
     assurance_level: str | None
     assurance_standard: str | None
     assurance_citation: ParsedCitation | None
     fields: list[ParsedField]
-    summary: str
+    summary_sections: dict[str, str]
     notes: str
     raw_text: str
     error: str | None = None
@@ -274,7 +331,8 @@ def extract_statement(pdf_bytes: bytes) -> ExtractionResult:
     valid_field_names = {f.upper() for f in FIELD_NAMES}
 
     header_values: dict[str, str] = {}
-    summary_lines: list[str] = []
+    summary_section_lines: dict[str, list[str]] = {k: [] for k in SUMMARY_SECTION_KEYS}
+    current_summary_section: str | None = None
     notes_lines: list[str] = []
     section = "header"  # header -> facts -> summary -> notes
 
@@ -292,13 +350,6 @@ def extract_statement(pdf_bytes: bytes) -> ExtractionResult:
         if not line:
             continue
 
-        if line.upper().startswith("SUMMARY:"):
-            section = "summary"
-            remainder = line[len("SUMMARY:"):].strip()
-            if remainder:
-                summary_lines.append(remainder)
-            continue
-
         if line.upper().startswith("NOTES:"):
             section = "notes"
             remainder = line[len("NOTES:"):].strip()
@@ -310,8 +361,18 @@ def extract_statement(pdf_bytes: bytes) -> ExtractionResult:
             notes_lines.append(line)
             continue
 
+        summary_section_match = SUMMARY_SECTION_RE.match(line)
+        if summary_section_match:
+            section = "summary"
+            current_summary_section = summary_section_match.group(1)
+            remainder = summary_section_match.group(2).strip()
+            if remainder:
+                summary_section_lines[current_summary_section].append(remainder)
+            continue
+
         if section == "summary":
-            summary_lines.append(line)
+            if current_summary_section:
+                summary_section_lines[current_summary_section].append(line)
             continue
 
         # section in {"header", "facts"} from here on
@@ -380,8 +441,18 @@ def extract_statement(pdf_bytes: bytes) -> ExtractionResult:
 
     valid_period_types = {"single_period", "multi_year"}
     valid_assurance_levels = {"compilation", "review", "audit", "none"}
+    valid_languages = {"english", "french", "bilingual_en_fr", "other"}
     period_type = (header_values.get("PERIOD_TYPE") or "").strip().lower()
     assurance_level = (header_values.get("ASSURANCE_LEVEL") or "").strip().lower()
+    language_detected = (header_values.get("LANGUAGE_DETECTED") or "").strip().lower()
+    unit_scale_note = header_values.get("UNIT_SCALE_NOTE")
+    unit_scale_uncertain = bool(unit_scale_note and unit_scale_note.strip().upper().startswith("UNCERTAIN:"))
+
+    summary_sections = {
+        key: "\n".join(lines).strip()
+        for key, lines in summary_section_lines.items()
+        if lines
+    }
 
     return ExtractionResult(
         company_name=header_values.get("COMPANY"),
@@ -390,11 +461,15 @@ def extract_statement(pdf_bytes: bytes) -> ExtractionResult:
         currency=header_values.get("CURRENCY"),
         period_type=period_type if period_type in valid_period_types else "unknown",
         periods_covered=header_values.get("PERIODS_COVERED"),
+        language_detected=language_detected if language_detected in valid_languages else "unknown",
+        structure_note=header_values.get("STRUCTURE_NOTE"),
+        unit_scale_note=unit_scale_note,
+        unit_scale_uncertain=unit_scale_uncertain,
         assurance_level=assurance_level if assurance_level in valid_assurance_levels else "unknown",
         assurance_standard=header_values.get("ASSURANCE_STANDARD"),
         assurance_citation=assurance_citation,
         fields=parsed_fields,
-        summary="\n".join(summary_lines) if summary_lines else "",
+        summary_sections=summary_sections,
         notes="\n".join(notes_lines) if notes_lines else "",
         raw_text=full_text,
     )

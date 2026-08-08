@@ -87,12 +87,16 @@ class StatementDetailOut(StatementListItem):
 
     period_type: str | None = None
     periods_covered: str | None = None
+    language_detected: str | None = None
+    structure_note: str | None = None
+    unit_scale_note: str | None = None
+    unit_scale_uncertain: bool = False
     assurance_level: str | None = None
     assurance_standard: str | None = None
     assurance_quote: str | None = None
     assurance_quote_page: int | None = None
     assurance_verified: bool = False
-    detailed_summary: str | None = None
+    summary_sections: dict[str, str] = {}
     ratios: list[RatioOut] = []
 
 
@@ -147,3 +151,19 @@ class DashboardMetrics(BaseModel):
     last_audit_at: datetime.datetime | None
     quality_trend: list[dict]
     recent_statements: list[StatementListItem]
+
+
+class ExecutiveDashboard(BaseModel):
+    total_statements: int
+    processing_count: int
+    processed_count: int
+    quarantined_count: int
+    error_count: int
+    avg_quality_score: float | None
+    citation_verification_rate: float | None
+    total_citations_captured: int
+    quarantine_resolution_rate: float | None
+    total_quarantine_items: int
+    assurance_level_breakdown: dict[str, int]
+    period_type_breakdown: dict[str, int]
+    quality_trend: list[dict]

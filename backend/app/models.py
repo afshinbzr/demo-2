@@ -51,6 +51,14 @@ class Statement(Base):
     periods_covered: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # comma-joined, most-recent first, e.g. "FY2026, FY2025"
 
+    # Format/language/unit consistency observations (spec: inconsistent formats,
+    # mixed EN/FR terminology, inconsistent unit scale within one document)
+    language_detected: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # english | french | bilingual_en_fr | other | unknown
+    structure_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit_scale_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit_scale_uncertain: Mapped[bool] = mapped_column(Boolean, default=False)
+
     # Assurance/engagement level (Canadian CPA standards) - see data_dictionary.ASSURANCE_STANDARDS
     assurance_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # compilation | review | audit | none | unknown
@@ -60,9 +68,10 @@ class Statement(Base):
     assurance_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     # True: the assurance quote was API-matched against the actual source text.
 
-    detailed_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Lender-oriented narrative: profitability, liquidity, leverage, cash flow,
-    # trend commentary if multi-year, and an overall assessment.
+    summary_sections_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON-encoded dict of lender-oriented narrative sections (profitability,
+    # liquidity, leverage, cash flow, red flags, overall assessment) - kept
+    # structured rather than one prose blob so the UI can render it scannable.
     ratios_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # JSON-encoded list of computed credit-analysis ratios (see ratios.py).
 
@@ -87,6 +96,13 @@ class Statement(Base):
         if not self.ratios_json:
             return []
         return json.loads(self.ratios_json)
+
+    @property
+    def summary_sections(self) -> dict:
+        """Parsed view of summary_sections_json for the API layer."""
+        if not self.summary_sections_json:
+            return {}
+        return json.loads(self.summary_sections_json)
 
 
 class LineItem(Base):

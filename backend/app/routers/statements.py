@@ -112,9 +112,13 @@ def _process_statement(statement_id: int, pdf_bytes: bytes) -> None:
         statement.raw_extraction_text = result.raw_text
         statement.period_type = result.period_type
         statement.periods_covered = result.periods_covered
+        statement.language_detected = result.language_detected
+        statement.structure_note = result.structure_note
+        statement.unit_scale_note = result.unit_scale_note
+        statement.unit_scale_uncertain = result.unit_scale_uncertain
         statement.assurance_level = result.assurance_level
         statement.assurance_standard = result.assurance_standard
-        statement.detailed_summary = result.summary
+        statement.summary_sections_json = json.dumps(result.summary_sections)
         if result.assurance_citation:
             statement.assurance_quote = result.assurance_citation.cited_text
             statement.assurance_quote_page = result.assurance_citation.page_number
