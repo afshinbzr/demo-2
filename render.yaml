@@ -11,18 +11,19 @@
 #      roles). Leaving it unset means ANYONE with the link can trigger
 #      billed Claude API calls - the app logs a startup warning if so.
 #
-# Persistent disk (SQLite data survives restarts/redeploys) requires the
-# "Starter" plan or higher - Render's free tier has no persistent disk, so
-# the database resets on every restart/redeploy there. To run on the free
-# tier instead: change `plan: starter` to `plan: free` and delete the
-# `disk:` block and the DATABASE_PATH env var below (falls back to a file
-# next to the code, which is fine, just not durable).
+# Free tier (current setting): no persistent disk, so the SQLite database
+# resets on every restart/redeploy, and the service spins down after 15
+# minutes idle - the next request then takes ~30-50s to wake it back up.
+# Both are fine for a test/demo link. To upgrade to a durable deployment
+# later: change `plan: free` to `plan: starter`, and add back a `disk:`
+# block (mountPath e.g. /var/data) plus a DATABASE_PATH env var pointing
+# into it, so the database survives restarts.
 
 services:
   - type: web
     name: financial-statement-governance-demo
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: "pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build"
     startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
@@ -34,9 +35,3 @@ services:
         sync: false
       - key: SESSION_COOKIE_SECURE
         value: "true"
-      - key: DATABASE_PATH
-        value: /var/data/data.db
-    disk:
-      name: sqlite-data
-      mountPath: /var/data
-      sizeGB: 1
