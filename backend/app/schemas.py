@@ -59,6 +59,17 @@ class StatementListItem(BaseModel):
     last_updated: datetime.datetime
 
 
+class RatioOut(BaseModel):
+    key: str
+    label: str
+    category: str
+    value: float | None = None
+    unit: str
+    formula: str
+    flag: str | None = None
+    note: str
+
+
 class StatementDetailOut(StatementListItem):
     currency: str | None = None
     ai_notes: str | None = None
@@ -73,6 +84,16 @@ class StatementDetailOut(StatementListItem):
     steward_id: int | None = None
     uploaded_by_id: int | None = None
     line_items: list[LineItemOut] = []
+
+    period_type: str | None = None
+    periods_covered: str | None = None
+    assurance_level: str | None = None
+    assurance_standard: str | None = None
+    assurance_quote: str | None = None
+    assurance_quote_page: int | None = None
+    assurance_verified: bool = False
+    detailed_summary: str | None = None
+    ratios: list[RatioOut] = []
 
 
 class QuarantineOut(BaseModel):

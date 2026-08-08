@@ -54,6 +54,27 @@ export interface StatementDetail extends StatementListItem {
   steward_id: number | null;
   uploaded_by_id: number | null;
   line_items: LineItem[];
+
+  period_type: "single_period" | "multi_year" | "unknown" | null;
+  periods_covered: string | null;
+  assurance_level: "compilation" | "review" | "audit" | "none" | "unknown" | null;
+  assurance_standard: string | null;
+  assurance_quote: string | null;
+  assurance_quote_page: number | null;
+  assurance_verified: boolean;
+  detailed_summary: string | null;
+  ratios: Ratio[];
+}
+
+export interface Ratio {
+  key: string;
+  label: string;
+  category: "liquidity" | "leverage" | "profitability" | "coverage";
+  value: number | null;
+  unit: "ratio" | "percent" | "currency";
+  formula: string;
+  flag: "good" | "warning" | "critical" | null;
+  note: string;
 }
 
 export interface QuarantineItem {

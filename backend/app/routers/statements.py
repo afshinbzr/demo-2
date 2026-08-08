@@ -1,3 +1,4 @@
+import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
@@ -9,6 +10,7 @@ from ..db import SessionLocal, get_db
 from ..extraction import extract_statement
 from ..models import Citation, LineItem, Quarantine, Statement, User
 from ..quality import run_quality_checks
+from ..ratios import compute_ratios, ratios_to_dicts
 from ..schemas import LineItemUpdate, StatementDetailOut, StatementListItem
 from ..versioning import correct_line_item
 
@@ -35,6 +37,21 @@ def _visible_query(db: Session, user: User):
 def _assert_visible(statement: Statement, user: User) -> None:
     if statement.classification not in VISIBLE_CLASSIFICATIONS[user.role]:
         raise HTTPException(status_code=403, detail="Insufficient classification clearance")
+
+
+def recompute_statement(db: Session, statement: Statement, record_quarantine: bool = False) -> None:
+    """Re-run quality scoring and credit ratios from the statement's current
+    active line items. Used after initial extraction and after any manual
+    correction (value changes ripple into both scores and ratios)."""
+    active_items = [li for li in statement.line_items if not li.is_deleted]
+    scores = run_quality_checks(db, statement, active_items, record_quarantine=record_quarantine)
+    statement.completeness_score = scores.completeness
+    statement.validity_score = scores.validity
+    statement.consistency_score = scores.consistency
+    statement.uniqueness_score = scores.uniqueness
+    statement.citation_coverage_score = scores.citation_coverage
+    statement.quality_score = scores.composite
+    statement.ratios_json = json.dumps(ratios_to_dicts(compute_ratios(active_items)))
 
 
 @router.post("/upload")
@@ -93,6 +110,15 @@ def _process_statement(statement_id: int, pdf_bytes: bytes) -> None:
         statement.currency = result.currency
         statement.ai_notes = result.notes
         statement.raw_extraction_text = result.raw_text
+        statement.period_type = result.period_type
+        statement.periods_covered = result.periods_covered
+        statement.assurance_level = result.assurance_level
+        statement.assurance_standard = result.assurance_standard
+        statement.detailed_summary = result.summary
+        if result.assurance_citation:
+            statement.assurance_quote = result.assurance_citation.cited_text
+            statement.assurance_quote_page = result.assurance_citation.page_number
+            statement.assurance_verified = result.assurance_citation.verified
 
         line_items = []
         for pf in result.fields:
@@ -114,13 +140,7 @@ def _process_statement(statement_id: int, pdf_bytes: bytes) -> None:
             line_items.append(li)
         db.commit()
 
-        scores = run_quality_checks(db, statement, line_items)
-        statement.completeness_score = scores.completeness
-        statement.validity_score = scores.validity
-        statement.consistency_score = scores.consistency
-        statement.uniqueness_score = scores.uniqueness
-        statement.citation_coverage_score = scores.citation_coverage
-        statement.quality_score = scores.composite
+        recompute_statement(db, statement, record_quarantine=True)
 
         db.flush()  # session has autoflush=False; quarantine rows added in run_quality_checks
         # must be flushed before the count below sees them.
@@ -180,14 +200,7 @@ def correct_line_item_endpoint(
     )
 
     statement = db.get(Statement, statement_id)
-    active_items = [li for li in statement.line_items if not li.is_deleted]
-    scores = run_quality_checks(db, statement, active_items, record_quarantine=False)
-    statement.completeness_score = scores.completeness
-    statement.validity_score = scores.validity
-    statement.consistency_score = scores.consistency
-    statement.uniqueness_score = scores.uniqueness
-    statement.citation_coverage_score = scores.citation_coverage
-    statement.quality_score = scores.composite
+    recompute_statement(db, statement, record_quarantine=False)
     db.commit()
 
     return {"ok": True, "new_line_item_id": new_item.id}

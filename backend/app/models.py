@@ -1,4 +1,5 @@
 import datetime
+import json
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -44,6 +45,27 @@ class Statement(Base):
     raw_extraction_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Period coverage
+    period_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # single_period | multi_year | unknown
+    periods_covered: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # comma-joined, most-recent first, e.g. "FY2026, FY2025"
+
+    # Assurance/engagement level (Canadian CPA standards) - see data_dictionary.ASSURANCE_STANDARDS
+    assurance_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # compilation | review | audit | none | unknown
+    assurance_standard: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assurance_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assurance_quote_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assurance_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # True: the assurance quote was API-matched against the actual source text.
+
+    detailed_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Lender-oriented narrative: profitability, liquidity, leverage, cash flow,
+    # trend commentary if multi-year, and an overall assessment.
+    ratios_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON-encoded list of computed credit-analysis ratios (see ratios.py).
+
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     completeness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     validity_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -57,6 +79,14 @@ class Statement(Base):
     line_items: Mapped[list["LineItem"]] = relationship(
         back_populates="statement", cascade="all, delete-orphan"
     )
+
+    @property
+    def ratios(self) -> list[dict]:
+        """Parsed view of ratios_json for the API layer (Pydantic reads this
+        like any other attribute via from_attributes)."""
+        if not self.ratios_json:
+            return []
+        return json.loads(self.ratios_json)
 
 
 class LineItem(Base):

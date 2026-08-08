@@ -1,16 +1,32 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api";
-import type { LineItem, StatementDetail as StatementDetailType } from "../types";
+import type { LineItem, Ratio, StatementDetail as StatementDetailType } from "../types";
 import StatusPill from "../components/StatusPill";
 import ClassificationPill from "../components/ClassificationPill";
 import { hasRole, useAuth } from "../AuthContext";
+import { ASSURANCE_STANDARDS } from "../assuranceStandards";
 
 function formatValue(li: LineItem): string {
   if (li.value === null) return "—";
   const formatted = Math.abs(li.value) >= 1000 ? li.value.toLocaleString() : li.value.toString();
   return `${formatted}${li.unit ? " " + li.unit : ""}`;
 }
+
+function formatRatioValue(r: Ratio): string {
+  if (r.value === null) return "n/a";
+  if (r.unit === "percent") return `${r.value}%`;
+  if (r.unit === "currency") return r.value.toLocaleString();
+  return r.value.toString();
+}
+
+const RATIO_CATEGORY_LABELS: Record<string, string> = {
+  liquidity: "Liquidity",
+  leverage: "Leverage / Solvency",
+  profitability: "Profitability",
+  coverage: "Coverage",
+};
+const RATIO_CATEGORY_ORDER = ["liquidity", "leverage", "profitability", "coverage"];
 
 export default function StatementDetail() {
   const { id } = useParams();
@@ -72,6 +88,45 @@ export default function StatementDetail() {
         {statement.fiscal_period ?? "unknown period"} · {statement.currency ?? ""}
       </p>
 
+      <div className="badge-row">
+        <div className={`info-badge assurance-${statement.assurance_level ?? "unknown"}`}>
+          <div className="label">Assurance / Engagement Level</div>
+          <div className="headline">
+            {ASSURANCE_STANDARDS[statement.assurance_level ?? "unknown"]?.label ?? "Unknown"}
+          </div>
+          <div className="muted">
+            {statement.assurance_standard && statement.assurance_standard !== "n/a"
+              ? statement.assurance_standard
+              : ASSURANCE_STANDARDS[statement.assurance_level ?? "unknown"]?.standard}
+          </div>
+          <p className="muted" style={{ marginTop: "0.5rem" }}>
+            {ASSURANCE_STANDARDS[statement.assurance_level ?? "unknown"]?.description}
+          </p>
+          {statement.assurance_quote && (
+            <div className="citation-box">
+              <div className={statement.assurance_verified ? "confidence-high" : "confidence-medium"}>
+                {statement.assurance_verified
+                  ? `✓ Verified — Page ${statement.assurance_quote_page}`
+                  : "⚠ Unverified — AI-reported, page unknown"}
+              </div>
+              <div className="quote">"{statement.assurance_quote}"</div>
+            </div>
+          )}
+        </div>
+
+        <div className="info-badge">
+          <div className="label">Period Coverage</div>
+          <div className="headline">
+            {statement.period_type === "multi_year"
+              ? "Multi-year / comparative"
+              : statement.period_type === "single_period"
+              ? "Single period"
+              : "Unknown"}
+          </div>
+          <div className="muted">{statement.periods_covered ?? "Periods not identified"}</div>
+        </div>
+      </div>
+
       {statement.status === "error" && (
         <div className="card" style={{ borderColor: "var(--status-critical)" }}>
           <strong>Extraction failed:</strong> {statement.error_detail}
@@ -104,6 +159,64 @@ export default function StatementDetail() {
           <div className="value">{statement.citation_coverage_score ?? "—"}</div>
         </div>
       </div>
+
+      <div className="card" style={{ marginBottom: "1.5rem" }}>
+        <div className="section-title" style={{ marginTop: 0 }}>Credit analysis ratios</div>
+        <p className="muted">
+          Standard commercial-lending ratios computed from the extracted figures above (most
+          recent period). These are general, widely-used lending ratios — not a reproduction of
+          any lender's actual proprietary underwriting scorecard. Thresholds are common rules of
+          thumb and vary a lot by industry and facility type in real underwriting.
+        </p>
+        {statement.ratios.length === 0 ? (
+          <p className="muted">No ratios could be computed — not enough line items extracted.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Ratio</th>
+                <th>Value</th>
+                <th>Formula</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {RATIO_CATEGORY_ORDER.map((cat) => {
+                const items = statement.ratios.filter((r) => r.category === cat);
+                if (items.length === 0) return null;
+                return (
+                  <Fragment key={cat}>
+                    <tr className="ratio-category-header">
+                      <td colSpan={4}>{RATIO_CATEGORY_LABELS[cat]}</td>
+                    </tr>
+                    {items.map((r) => (
+                      <tr key={r.key}>
+                        <td>{r.label}</td>
+                        <td className={r.flag ? `flag-${r.flag}` : ""}>{formatRatioValue(r)}</td>
+                        <td className="muted">{r.formula}</td>
+                        <td className="muted">{r.note}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {statement.detailed_summary && (
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <div className="section-title" style={{ marginTop: 0 }}>
+            Detailed summary — for evaluation, audit &amp; decision making
+          </div>
+          <div className="summary-prose">
+            {statement.detailed_summary.split(/\n{2,}/).map((para, i) => (
+              <p key={i}>{para}</p>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="detail-grid">
         <div className="card">

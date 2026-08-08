@@ -5,10 +5,9 @@ from .. import auth as auth_module
 from ..audit import log_action
 from ..db import get_db
 from ..models import LineItem, Quarantine, Statement, User
-from ..quality import run_quality_checks
 from ..schemas import QuarantineOut, QuarantineResolve
 from ..versioning import correct_line_item
-from .statements import VISIBLE_CLASSIFICATIONS
+from .statements import VISIBLE_CLASSIFICATIONS, recompute_statement
 
 router = APIRouter(prefix="/api/quarantine", tags=["quarantine"])
 
@@ -70,14 +69,7 @@ def resolve_quarantine(
         detail=f"Resolved as '{payload.resolution}' for statement #{statement.id}",
     )
 
-    active_items = [li for li in statement.line_items if not li.is_deleted]
-    scores = run_quality_checks(db, statement, active_items, record_quarantine=False)
-    statement.completeness_score = scores.completeness
-    statement.validity_score = scores.validity
-    statement.consistency_score = scores.consistency
-    statement.uniqueness_score = scores.uniqueness
-    statement.citation_coverage_score = scores.citation_coverage
-    statement.quality_score = scores.composite
+    recompute_statement(db, statement, record_quarantine=False)
 
     remaining_pending = (
         db.query(Quarantine)
