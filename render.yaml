@@ -1,0 +1,42 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys the FastAPI backend, which also serves the built React frontend
+# (single service, no CORS/cross-origin cookies to worry about).
+#
+# One-time setup after connecting this repo in the Render dashboard:
+#   1. Set the ANTHROPIC_API_KEY secret (Render will prompt for it - marked
+#      `sync: false` below so it's never committed to git).
+#   2. Set the UPLOAD_ROLE_PASSWORD secret to whatever password you want to
+#      share with teammates who need to upload/edit (editor/steward/admin
+#      roles). Leaving it unset means ANYONE with the link can trigger
+#      billed Claude API calls - the app logs a startup warning if so.
+#
+# Persistent disk (SQLite data survives restarts/redeploys) requires the
+# "Starter" plan or higher - Render's free tier has no persistent disk, so
+# the database resets on every restart/redeploy there. To run on the free
+# tier instead: change `plan: starter` to `plan: free` and delete the
+# `disk:` block and the DATABASE_PATH env var below (falls back to a file
+# next to the code, which is fine, just not durable).
+
+services:
+  - type: web
+    name: financial-statement-governance-demo
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build"
+    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: UPLOAD_ROLE_PASSWORD
+        sync: false
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: DATABASE_PATH
+        value: /var/data/data.db
+    disk:
+      name: sqlite-data
+      mountPath: /var/data
+      sizeGB: 1
