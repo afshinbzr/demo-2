@@ -106,8 +106,12 @@ def compute_ratios(line_items: list[LineItem]) -> list[Ratio]:
         key="working_capital", label="Working Capital", category="liquidity",
         value=round(working_capital, 0) if working_capital is not None else None,
         unit="currency", formula="Total Current Assets - Total Current Liabilities",
-        flag="good" if (working_capital or 0) >= 0 else "critical" if working_capital is not None else None,
-        note="Dollar amount of short-term assets available after covering short-term liabilities.",
+        # None must be tested before the >= comparison - `(None or 0) >= 0` is
+        # True, which would paint an uncomputable value green.
+        flag=None if working_capital is None else ("good" if working_capital >= 0 else "critical"),
+        note="Dollar amount of short-term assets available after covering short-term liabilities."
+             if working_capital is not None
+             else "Requires total_current_assets and total_current_liabilities.",
     ))
 
     debt_to_equity = safe_div(total_liabilities, total_equity)

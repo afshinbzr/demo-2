@@ -47,6 +47,13 @@ const RATIO_CATEGORY_LABELS: Record<string, string> = {
 };
 const RATIO_CATEGORY_ORDER = ["liquidity", "leverage", "profitability", "coverage"];
 
+const STATEMENT_TYPE_LABELS: Record<string, string> = {
+  income_statement: "Income statement",
+  balance_sheet: "Balance sheet",
+  cash_flow: "Cash flow statement",
+  other: "Full statement package",
+};
+
 const LANGUAGE_LABELS: Record<string, string> = {
   english: "English",
   french: "French",
@@ -70,6 +77,7 @@ export default function StatementDetail() {
   const [editValue, setEditValue] = useState<string>("");
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -92,34 +100,55 @@ export default function StatementDetail() {
   async function saveCorrection() {
     if (!statement || !selected) return;
     const value = parseFloat(editValue);
-    if (Number.isNaN(value)) return;
+    if (Number.isNaN(value)) {
+      setCorrectionError("Enter a number before saving.");
+      return;
+    }
     setEditing(true);
+    setCorrectionError(null);
     try {
       await api.patch(`/api/statements/${statement.id}/line_items/${selected.id}`, { value });
       setSelected(null);
       await load();
     } catch (e) {
-      alert("Correction failed: " + (e as Error).message);
+      setCorrectionError((e as Error).message || "Could not save that correction.");
     } finally {
       setEditing(false);
     }
   }
 
-  if (error) return <div className="page">Error: {error}</div>;
+  if (error) {
+    return (
+      <div className="page">
+        <div className="card" style={{ borderColor: "var(--status-critical)" }}>
+          <strong>Could not load this statement.</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
   if (!statement) return <div className="page">Loading…</div>;
 
   return (
     <div className="page">
       <div className="flex-between">
-        <h1 style={{ marginBottom: "0.25rem" }}>{statement.filename}</h1>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <h1 className="statement-title">{statement.filename}</h1>
+        <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
           <ClassificationPill classification={statement.classification} />
           <StatusPill status={statement.status} />
         </div>
       </div>
       <p className="muted">
-        {statement.company_name ?? "Unknown company"} · {statement.statement_type ?? "unknown type"} ·{" "}
-        {statement.fiscal_period ?? "unknown period"} · {statement.currency ?? ""}
+        {/* Built by filtering then joining so a missing field never leaves a
+            dangling "·" separator at the end of the line. */}
+        {[
+          statement.company_name ?? "Unknown company",
+          STATEMENT_TYPE_LABELS[statement.statement_type ?? ""] ?? statement.statement_type,
+          statement.fiscal_period,
+          statement.currency,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </p>
 
       <div className="badge-row">
@@ -179,7 +208,10 @@ export default function StatementDetail() {
                 fontWeight: statement.unit_scale_uncertain ? 600 : undefined,
               }}
             >
-              <strong>Units:</strong> {statement.unit_scale_note}
+              <strong>Units:</strong>{" "}
+              {/* Strip the prompt's "UNCERTAIN:" sentinel - it drives the styling
+                  above, it shouldn't leak into the sentence the user reads. */}
+              {statement.unit_scale_note.replace(/^UNCERTAIN:\s*/i, "")}
             </p>
           )}
         </div>
@@ -187,7 +219,21 @@ export default function StatementDetail() {
 
       {statement.status === "error" && (
         <div className="card" style={{ borderColor: "var(--status-critical)" }}>
-          <strong>Extraction failed:</strong> {statement.error_detail}
+          <strong>Extraction failed.</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            This statement could not be processed. Re-upload it, or ask an administrator to
+            check the server logs.
+          </p>
+          {/* The raw exception can contain provider/internal detail, so it's
+              shown only to admins - everyone else gets the plain message. */}
+          {hasRole(user, "admin") && statement.error_detail && (
+            <details style={{ marginTop: "0.6rem" }}>
+              <summary className="muted" style={{ cursor: "pointer" }}>
+                Technical detail (admin only)
+              </summary>
+              <pre className="error-detail-pre">{statement.error_detail}</pre>
+            </details>
+          )}
         </div>
       )}
 
@@ -229,37 +275,39 @@ export default function StatementDetail() {
         {statement.ratios.length === 0 ? (
           <p className="muted">No ratios could be computed — not enough line items extracted.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Ratio</th>
-                <th>Value</th>
-                <th>Formula</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {RATIO_CATEGORY_ORDER.map((cat) => {
-                const items = statement.ratios.filter((r) => r.category === cat);
-                if (items.length === 0) return null;
-                return (
-                  <Fragment key={cat}>
-                    <tr className="ratio-category-header">
-                      <td colSpan={4}>{RATIO_CATEGORY_LABELS[cat]}</td>
-                    </tr>
-                    {items.map((r) => (
-                      <tr key={r.key}>
-                        <td>{r.label}</td>
-                        <td className={r.flag ? `flag-${r.flag}` : ""}>{formatRatioValue(r)}</td>
-                        <td className="muted">{r.formula}</td>
-                        <td className="muted">{r.note}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ratio</th>
+                  <th>Value</th>
+                  <th>Formula</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RATIO_CATEGORY_ORDER.map((cat) => {
+                  const items = statement.ratios.filter((r) => r.category === cat);
+                  if (items.length === 0) return null;
+                  return (
+                    <Fragment key={cat}>
+                      <tr className="ratio-category-header">
+                        <td colSpan={4}>{RATIO_CATEGORY_LABELS[cat]}</td>
                       </tr>
-                    ))}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                      {items.map((r) => (
+                        <tr key={r.key}>
+                          <td>{r.label}</td>
+                          <td className={r.flag ? `flag-${r.flag}` : ""}>{formatRatioValue(r)}</td>
+                          <td className="muted">{r.formula}</td>
+                          <td className="muted">{r.note}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -310,45 +358,47 @@ export default function StatementDetail() {
       <div className="detail-grid">
         <div className="card">
           <div className="section-title" style={{ marginTop: 0 }}>Extracted line items</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th>Value</th>
-                <th>Period</th>
-                <th>Confidence</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {statement.line_items.map((li) => (
-                <tr
-                  key={li.id}
-                  className={`line-item-row ${selected?.id === li.id ? "selected" : ""}`}
-                  onClick={() => {
-                    setSelected(li);
-                    setEditValue(li.value?.toString() ?? "");
-                  }}
-                >
-                  <td>{li.raw_label ?? li.field_name}</td>
-                  <td>
-                    <HoverTooltip content={<CitationTooltipContent citations={li.citations} />}>
-                      {formatValue(li)}
-                    </HoverTooltip>
-                  </td>
-                  <td>{li.period ?? "—"}</td>
-                  <td className={`confidence-${li.confidence}`}>
-                    {li.confidence}
-                    {li.is_outlier && <span className="outlier-flag"> ⚠ outlier</span>}
-                  </td>
-                  <td>v{li.version}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Value</th>
+                  <th>Period</th>
+                  <th>Confidence</th>
+                  <th></th>
                 </tr>
-              ))}
-              {statement.line_items.length === 0 && (
-                <tr><td colSpan={5} className="muted">No line items extracted.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {statement.line_items.map((li) => (
+                  <tr
+                    key={li.id}
+                    className={`line-item-row ${selected?.id === li.id ? "selected" : ""}`}
+                    onClick={() => {
+                      setSelected(li);
+                      setEditValue(li.value?.toString() ?? "");
+                    }}
+                  >
+                    <td>{li.raw_label ?? li.field_name}</td>
+                    <td>
+                      <HoverTooltip content={<CitationTooltipContent citations={li.citations} />}>
+                        {formatValue(li)}
+                      </HoverTooltip>
+                    </td>
+                    <td>{li.period ?? "—"}</td>
+                    <td className={`confidence-${li.confidence}`}>
+                      {li.confidence}
+                      {li.is_outlier && <span className="outlier-flag"> ⚠ outlier</span>}
+                    </td>
+                    <td>v{li.version}</td>
+                  </tr>
+                ))}
+                {statement.line_items.length === 0 && (
+                  <tr><td colSpan={5} className="muted">No line items extracted.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {statement.ai_notes && (
             <>
@@ -393,7 +443,11 @@ export default function StatementDetail() {
                 <>
                   <div className="section-title">Correct this value</div>
                   <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <label htmlFor="corrected-value" className="visually-hidden">
+                      Corrected value
+                    </label>
                     <input
+                      id="corrected-value"
                       type="number"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
@@ -402,6 +456,11 @@ export default function StatementDetail() {
                       {editing ? "Saving…" : "Save correction"}
                     </button>
                   </div>
+                  {correctionError && (
+                    <p style={{ color: "var(--status-critical)" }} role="alert">
+                      {correctionError}
+                    </p>
+                  )}
                   <p className="muted">
                     Saving creates a new version (v{selected.version + 1}) — the AI-extracted
                     value is kept in history, never overwritten.

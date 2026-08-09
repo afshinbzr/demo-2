@@ -42,6 +42,12 @@ def seed_demo_users(db: Session) -> None:
     db.commit()
 
 
+def upload_password_configured() -> bool:
+    """Whether a shared upload password is actually enforced. The login UI reads
+    this so it doesn't present a password box that accepts anything."""
+    return bool(os.environ.get("UPLOAD_ROLE_PASSWORD"))
+
+
 def check_upload_role_password(role: str, password: str | None) -> bool:
     """Viewer is always free to log into (view-only, costs nothing). Roles
     that can upload/edit - which can trigger a paid Claude API call - require

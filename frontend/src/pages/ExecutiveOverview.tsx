@@ -67,15 +67,20 @@ function GenericTooltip({ active, payload, labelKey, valueLabel }: any) {
 
 export default function ExecutiveOverview() {
   const [data, setData] = useState<ExecutiveDashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let stopped = false;
     async function load() {
       try {
         const d = await api.get<ExecutiveDashboard>("/api/dashboard/executive");
-        if (!stopped) setData(d);
-      } catch {
-        /* ignore transient errors while polling */
+        if (!stopped) {
+          setData(d);
+          setError(null);
+        }
+      } catch (e) {
+        // Only surface an error before the first successful load - see Dashboard.
+        if (!stopped) setError((e as Error).message || "Could not load the overview.");
       }
     }
     load();
@@ -86,7 +91,20 @@ export default function ExecutiveOverview() {
     };
   }, []);
 
-  if (!data) return <div className="page">Loading executive overview…</div>;
+  if (!data) {
+    return (
+      <div className="page">
+        {error ? (
+          <div className="card" style={{ borderColor: "var(--status-critical)" }}>
+            <strong>Could not load the executive overview.</strong>
+            <p className="muted" style={{ marginBottom: 0 }}>{error}</p>
+          </div>
+        ) : (
+          "Loading executive overview…"
+        )}
+      </div>
+    );
+  }
 
   const assuranceData = Object.entries(data.assurance_level_breakdown).map(([key, count]) => ({
     key,
@@ -143,12 +161,12 @@ export default function ExecutiveOverview() {
           </div>
         </div>
         <div className="tile">
-          <div className="label">Citation verification rate</div>
+          <div className="label">Verified quotes (portfolio)</div>
           <div className={`value ${scoreClass(data.citation_verification_rate)}`}>
             {data.citation_verification_rate !== null ? `${data.citation_verification_rate}%` : "—"}
           </div>
           <div className="muted" style={{ fontSize: "0.72rem" }}>
-            {data.total_citations_captured} source quotes captured
+            of {data.total_citations_captured} source quotes captured
           </div>
         </div>
         <div className="tile">
@@ -181,7 +199,9 @@ export default function ExecutiveOverview() {
         </div>
 
         <div className="card">
-          <div className="section-title" style={{ marginTop: 0 }}>Citation verification trend</div>
+          <div className="section-title" style={{ marginTop: 0 }}>
+            Citation coverage per statement
+          </div>
           {data.quality_trend.length === 0 ? (
             <p className="muted">No processed statements yet.</p>
           ) : (

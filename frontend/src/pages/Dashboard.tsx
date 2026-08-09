@@ -43,15 +43,21 @@ function TrendTooltip({ active, payload }: any) {
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let stopped = false;
     async function load() {
       try {
         const m = await api.get<DashboardMetrics>("/api/dashboard");
-        if (!stopped) setMetrics(m);
-      } catch {
-        /* ignore transient errors while polling */
+        if (!stopped) {
+          setMetrics(m);
+          setError(null);
+        }
+      } catch (e) {
+        // Only surface an error before the first successful load. Once data is
+        // on screen, a blip between polls shouldn't replace it with an error.
+        if (!stopped) setError((e as Error).message || "Could not load the dashboard.");
       }
     }
     load();
@@ -62,7 +68,20 @@ export default function Dashboard() {
     };
   }, []);
 
-  if (!metrics) return <div className="page">Loading dashboard…</div>;
+  if (!metrics) {
+    return (
+      <div className="page">
+        {error ? (
+          <div className="card" style={{ borderColor: "var(--status-critical)" }}>
+            <strong>Could not load the dashboard.</strong>
+            <p className="muted" style={{ marginBottom: 0 }}>{error}</p>
+          </div>
+        ) : (
+          "Loading dashboard…"
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -141,30 +160,39 @@ export default function Dashboard() {
 
       <div className="card">
         <div className="section-title" style={{ marginTop: 0 }}>Recent uploads</div>
-        <table>
-          <thead>
-            <tr>
-              <th>File</th>
-              <th>Company</th>
-              <th>Period</th>
-              <th>Classification</th>
-              <th>Status</th>
-              <th>Quality</th>
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.recent_statements.map((s) => (
-              <tr key={s.id}>
-                <td><Link to={`/statements/${s.id}`}>{s.filename}</Link></td>
-                <td>{s.company_name ?? "—"}</td>
-                <td>{s.fiscal_period ?? "—"}</td>
-                <td><ClassificationPill classification={s.classification} /></td>
-                <td><StatusPill status={s.status} /></td>
-                <td>{s.quality_score ?? "—"}</td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Company</th>
+                <th>Period</th>
+                <th>Classification</th>
+                <th>Status</th>
+                <th>Quality</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {metrics.recent_statements.map((s) => (
+                <tr key={s.id}>
+                  <td><Link to={`/statements/${s.id}`}>{s.filename}</Link></td>
+                  <td>{s.company_name ?? "—"}</td>
+                  <td>{s.fiscal_period ?? "—"}</td>
+                  <td><ClassificationPill classification={s.classification} /></td>
+                  <td><StatusPill status={s.status} /></td>
+                  <td>{s.quality_score ?? "—"}</td>
+                </tr>
+              ))}
+              {metrics.recent_statements.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    No statements uploaded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

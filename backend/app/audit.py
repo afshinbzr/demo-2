@@ -17,8 +17,10 @@ def log_action(
     new_value: dict[str, Any] | None = None,
     detail: str | None = None,
 ) -> None:
-    """Write one audit_log row. Called for every create/update/delete and every
-    read of a Confidential/Restricted record (spec 1.2, 1.4)."""
+    """Write one audit_log row. Called for every create and update (including
+    the AI extraction run), and whenever a Confidential/Restricted record's
+    detail page is opened (spec 1.2, 1.4). List and dashboard reads are not
+    logged - they re-fetch on every navigation and would flood the table."""
     entry = AuditLog(
         entity_type=entity_type,
         entity_id=entity_id,

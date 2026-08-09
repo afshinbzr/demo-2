@@ -64,6 +64,14 @@ def upload_statements(
 ):
     if classification not in {"Public", "Internal", "Confidential", "Restricted"}:
         raise HTTPException(status_code=400, detail="Invalid classification")
+    # Least privilege (spec 1.2): you may not classify data above your own read
+    # clearance - otherwise the upload succeeds but the uploader can never open
+    # the result, and it silently disappears from their own list view.
+    if classification not in VISIBLE_CLASSIFICATIONS[user.role]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your role ('{user.role}') cannot classify data as {classification}",
+        )
 
     created_ids = []
     for f in files:
@@ -102,6 +110,10 @@ def _process_statement(statement_id: int, pdf_bytes: bytes) -> None:
             statement.status = "error"
             statement.error_detail = str(exc)
             db.commit()
+            log_action(
+                db, entity_type="statement", entity_id=statement.id, action="update", user=None,
+                detail="AI extraction failed - see the statement's error detail",
+            )
             return
 
         statement.company_name = result.company_name
@@ -151,6 +163,17 @@ def _process_statement(statement_id: int, pdf_bytes: bytes) -> None:
         pending = db.query(Quarantine).filter(Quarantine.statement_id == statement.id).count()
         statement.status = "quarantined" if pending else "processed"
         db.commit()
+
+        # One summary row per extraction run so the AI's writes have recorded
+        # provenance. Deliberately not one row per line item/citation - an
+        # upload writes dozens, which would drown the audit view.
+        log_action(
+            db, entity_type="statement", entity_id=statement.id, action="update", user=None,
+            detail=(
+                f"AI extraction wrote {len(line_items)} line item(s) and raised "
+                f"{pending} quarantine flag(s); status={statement.status}"
+            ),
+        )
     finally:
         db.close()
 
@@ -193,6 +216,14 @@ def correct_line_item_endpoint(
     if not item or item.statement_id != statement_id or item.is_deleted:
         raise HTTPException(status_code=404, detail="Line item not found")
 
+    # Write clearance must not exceed read clearance - the GET sibling asserts
+    # this, so the PATCH has to as well, or an editor could rewrite values on a
+    # Confidential statement they cannot open.
+    statement = db.get(Statement, statement_id)
+    if not statement or statement.is_deleted:
+        raise HTTPException(status_code=404, detail="Statement not found")
+    _assert_visible(statement, user)
+
     new_item = correct_line_item(
         db, item,
         new_value=payload.value,
@@ -203,7 +234,6 @@ def correct_line_item_endpoint(
         source="manual correction",
     )
 
-    statement = db.get(Statement, statement_id)
     recompute_statement(db, statement, record_quarantine=False)
     db.commit()
 

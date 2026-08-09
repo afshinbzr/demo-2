@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 
 from .. import auth as auth_module
 from ..db import get_db
-from ..models import AuditLog, DataDictionaryEntry, User
+from ..models import AuditLog, DataDictionaryEntry, Statement, User
 from ..schemas import AuditLogOut, DataDictionaryOut, UserOut
+from .statements import VISIBLE_CLASSIFICATIONS
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -29,4 +30,18 @@ def audit_log(
     q = db.query(AuditLog)
     if entity_type:
         q = q.filter(AuditLog.entity_type == entity_type)
-    return q.order_by(AuditLog.timestamp.desc()).limit(min(limit, 1000)).all()
+
+    # The audit log's `detail` text quotes filenames and values from the record
+    # it describes, so statement rows have to respect the same classification
+    # clearance the statements router enforces - otherwise the audit view
+    # becomes a side channel onto Restricted statements.
+    allowed = VISIBLE_CLASSIFICATIONS[user.role]
+    visible_statement_ids = {
+        row[0]
+        for row in db.query(Statement.id).filter(Statement.classification.in_(allowed)).all()
+    }
+    rows = q.order_by(AuditLog.timestamp.desc()).limit(min(limit, 1000)).all()
+    return [
+        r for r in rows
+        if r.entity_type != "statement" or r.entity_id in visible_statement_ids
+    ]

@@ -124,7 +124,7 @@ def run_quality_checks(
         else:
             maybe_quarantine(
                 "invalid_currency",
-                f"Currency code '{statement.currency}' is not a recognized ISO code.",
+                f"Currency code '{statement.currency}' is not one of the currencies this tool accepts.",
             )
 
     for li in active_items:
@@ -224,6 +224,13 @@ def run_quality_checks(
         100.0 * len(verified_items) / len(numeric_items) if numeric_items else 0.0
     )
     for li in numeric_items:
+        # A human-entered correction is authoritative - never downgrade it to
+        # "low" just because the new value has no AI citation attached. Scores
+        # are recomputed after every correction, so without this guard a
+        # steward's own verified number would immediately be relabelled
+        # untrustworthy.
+        if li.confidence == "manual":
+            continue
         if any(c.verified for c in li.citations):
             li.confidence = "high"
         elif li.citations:

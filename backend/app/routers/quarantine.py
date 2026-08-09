@@ -7,7 +7,7 @@ from ..db import get_db
 from ..models import LineItem, Quarantine, Statement, User
 from ..schemas import QuarantineOut, QuarantineResolve
 from ..versioning import correct_line_item
-from .statements import VISIBLE_CLASSIFICATIONS, recompute_statement
+from .statements import VISIBLE_CLASSIFICATIONS, _assert_visible, recompute_statement
 
 router = APIRouter(prefix="/api/quarantine", tags=["quarantine"])
 
@@ -39,12 +39,19 @@ def resolve_quarantine(
     item = db.get(Quarantine, quarantine_id)
     if not item:
         raise HTTPException(status_code=404, detail="Quarantine item not found")
+
+    # Clearance is checked before the status/payload branches below, so this
+    # endpoint can't be used to probe which quarantine ids exist on statements
+    # the caller isn't cleared to see (the list sibling already filters them).
+    statement = db.get(Statement, item.statement_id)
+    if not statement or statement.is_deleted:
+        raise HTTPException(status_code=404, detail="Quarantine item not found")
+    _assert_visible(statement, user)
+
     if item.status != "pending":
         raise HTTPException(status_code=400, detail="Already reviewed")
     if payload.resolution not in {"approved", "corrected", "rejected"}:
         raise HTTPException(status_code=400, detail="resolution must be approved|corrected|rejected")
-
-    statement = db.get(Statement, item.statement_id)
 
     if payload.resolution == "corrected":
         if not item.line_item_id or payload.corrected_value is None:
@@ -59,7 +66,10 @@ def resolve_quarantine(
 
     item.status = "resolved"
     item.reviewed_by_id = user.id
-    item.resolution_note = f"{payload.resolution}: {payload.note or ''}".strip()
+    # Only append the note when there is one, otherwise the stored value ends
+    # in a stray colon that renders as "Resolved: approved:" in the UI.
+    note = (payload.note or "").strip()
+    item.resolution_note = f"{payload.resolution}: {note}" if note else payload.resolution
     from datetime import datetime, timezone
     item.reviewed_at = datetime.now(timezone.utc)
     db.commit()

@@ -8,16 +8,31 @@ interface DemoUser {
   role: string;
 }
 
+interface DemoUsersResponse {
+  users: DemoUser[];
+  upload_password_required: boolean;
+}
+
 export default function Login() {
   const [demoUsers, setDemoUsers] = useState<DemoUser[]>([]);
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState<DemoUser | null>(null);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const { login, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get<DemoUser[]>("/api/auth/demo_users").then(setDemoUsers).catch(() => {});
+    api
+      .get<DemoUsersResponse>("/api/auth/demo_users")
+      .then((d) => {
+        setDemoUsers(d.users);
+        setPasswordRequired(d.upload_password_required);
+        setLoadError(null);
+      })
+      .catch(() => setLoadError("Could not reach the server. Is the backend running?"));
   }, []);
 
   useEffect(() => {
@@ -26,6 +41,7 @@ export default function Login() {
 
   async function doLogin(username: string, pw?: string) {
     setError(null);
+    setBusy(true);
     try {
       await login(username, pw);
       navigate("/");
@@ -33,13 +49,17 @@ export default function Login() {
       if (e instanceof ApiError && e.status === 403) {
         setError("Incorrect password for this role.");
       } else {
-        setError("Login failed.");
+        setError("Login failed. Please try again.");
       }
+    } finally {
+      setBusy(false);
     }
   }
 
   function pick(u: DemoUser) {
-    if (u.role === "viewer") {
+    // Only stop for a password when one is actually enforced server-side -
+    // otherwise the prompt would accept any input, which reads as broken.
+    if (u.role === "viewer" || !passwordRequired) {
       doLogin(u.username);
     } else {
       setError(null);
@@ -51,21 +71,33 @@ export default function Login() {
   return (
     <div className="login-shell">
       <div className="card login-card">
+        <span className="brand-logo" style={{ marginBottom: "1rem" }}>
+          <img src="/dc-logo-white.svg" alt="" />
+        </span>
         <h1 style={{ fontSize: "1.2rem" }}>Sign in</h1>
         <p className="muted">
           Demo authentication — pick a role. In a real deployment this would be replaced
           with your organization's SSO/identity provider.
         </p>
 
+        {loadError && <p style={{ color: "var(--status-critical)" }}>{loadError}</p>}
+
         {!pending ? (
           <>
             <div className="section-title">Demo users</div>
             {demoUsers.map((u) => (
-              <div key={u.username} className="demo-user" onClick={() => pick(u)}>
+              <button
+                key={u.username}
+                type="button"
+                className="demo-user"
+                disabled={busy}
+                onClick={() => pick(u)}
+              >
                 <span>{u.username}</span>
                 <span className="role-badge">{u.role}</span>
-              </div>
+              </button>
             ))}
+            {demoUsers.length === 0 && !loadError && <p className="muted">Loading users…</p>}
           </>
         ) : (
           <>
@@ -77,7 +109,11 @@ export default function Login() {
               enter the shared team password to continue.
             </p>
             <div style={{ display: "flex", gap: "0.5rem" }}>
+              <label htmlFor="team-password" className="visually-hidden">
+                Team password
+              </label>
               <input
+                id="team-password"
                 type="password"
                 autoFocus
                 placeholder="Team password"
@@ -87,9 +123,15 @@ export default function Login() {
                   if (e.key === "Enter") doLogin(pending.username, password);
                 }}
               />
-              <button onClick={() => doLogin(pending.username, password)}>Sign in</button>
+              <button disabled={busy} onClick={() => doLogin(pending.username, password)}>
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
             </div>
-            <button className="secondary" style={{ marginTop: "0.75rem" }} onClick={() => setPending(null)}>
+            <button
+              className="secondary"
+              style={{ marginTop: "0.75rem" }}
+              onClick={() => setPending(null)}
+            >
               Back
             </button>
           </>

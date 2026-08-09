@@ -12,9 +12,16 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.get("/demo_users")
 def list_demo_users(db: Session = Depends(get_db)):
-    """Public endpoint powering the login page's role picker."""
+    """Public endpoint powering the login page's role picker.
+
+    `upload_password_required` lets the UI show the shared-password step only
+    when one is actually enforced, instead of prompting for a password the
+    backend would accept anything for."""
     users = db.query(User).order_by(User.role.desc()).all()
-    return [{"username": u.username, "role": u.role} for u in users]
+    return {
+        "users": [{"username": u.username, "role": u.role} for u in users],
+        "upload_password_required": auth_module.upload_password_configured(),
+    }
 
 
 @router.post("/login", response_model=UserOut)

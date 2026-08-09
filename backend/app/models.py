@@ -59,7 +59,8 @@ class Statement(Base):
     unit_scale_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     unit_scale_uncertain: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Assurance/engagement level (Canadian CPA standards) - see data_dictionary.ASSURANCE_STANDARDS
+    # Assurance/engagement level (Canadian CPA standards). The human-readable
+    # descriptions live in frontend/src/assuranceStandards.ts (display-only).
     assurance_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # compilation | review | audit | none | unknown
     assurance_standard: Mapped[str | None] = mapped_column(String(64), nullable=True)

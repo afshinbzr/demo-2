@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import auth as auth_module
 from ..db import get_db
 from ..models import AuditLog, Citation, LineItem, Quarantine, Statement, User
-from ..schemas import DashboardMetrics, ExecutiveDashboard
+from ..schemas import DashboardMetrics, ExecutiveDashboard, StatementListItem
 from .statements import VISIBLE_CLASSIFICATIONS
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])

@@ -4,18 +4,32 @@
   --page-plane: #f9f9f7;
   --text-primary: #0b0b0b;
   --text-secondary: #52514e;
-  --text-muted: #898781;
+  --text-muted: #767570;
   --gridline: #e1e0d9;
   --border: rgba(11, 11, 11, 0.1);
   --series-1: #2a78d6;
-  --series-1-dark: #3987e5;
   --status-good: #0ca30c;
   --status-warning: #fab219;
-  --status-serious: #ec835a;
   --status-critical: #d03b3b;
-  --success-text: #006300;
+
+  /* Text-on-surface tokens. These are deliberately NOT the same values as the
+     status fill colors above: a fill only needs to be recognizable, whereas
+     text has to stay legible against the surface in BOTH themes. Each has a
+     dark-mode override below. */
+  --warning-text: #8a5c00;
+  --good-text: #0a7c0a;
+  --critical-text: #a3231a;
+  --info-text: #185191;
+  --row-hover: rgba(0, 0, 0, 0.035);
+  --pill-warning-bg: rgba(250, 178, 25, 0.18);
+  --pill-good-bg: rgba(12, 163, 12, 0.12);
+  --pill-critical-bg: rgba(208, 59, 59, 0.12);
+  --pill-info-bg: rgba(42, 120, 214, 0.12);
 }
 
+/* Dark mode is *selected*, not an automatic inversion: the amber and green
+   text tokens are re-stepped for the dark surface rather than reused, and the
+   row-hover wash flips from a dark tint to a light one so it stays visible. */
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
@@ -23,10 +37,19 @@
     --page-plane: #0d0d0d;
     --text-primary: #ffffff;
     --text-secondary: #c3c2b7;
-    --text-muted: #898781;
+    --text-muted: #a3a19a;
     --gridline: #2c2c2a;
     --border: rgba(255, 255, 255, 0.1);
-    --series-1: #3987e5;
+    --series-1: #6da7ec;
+    --warning-text: #f0b429;
+    --good-text: #4ac04a;
+    --critical-text: #ff9b9b;
+    --info-text: #86b6ef;
+    --row-hover: rgba(255, 255, 255, 0.05);
+    --pill-warning-bg: rgba(250, 178, 25, 0.16);
+    --pill-good-bg: rgba(12, 163, 12, 0.18);
+    --pill-critical-bg: rgba(208, 59, 59, 0.22);
+    --pill-info-bg: rgba(57, 135, 229, 0.2);
   }
 }
 :root[data-theme="dark"] {
@@ -35,10 +58,19 @@
   --page-plane: #0d0d0d;
   --text-primary: #ffffff;
   --text-secondary: #c3c2b7;
-  --text-muted: #898781;
+  --text-muted: #a3a19a;
   --gridline: #2c2c2a;
   --border: rgba(255, 255, 255, 0.1);
-  --series-1: #3987e5;
+  --series-1: #6da7ec;
+  --warning-text: #f0b429;
+  --good-text: #4ac04a;
+  --critical-text: #ff9b9b;
+  --info-text: #86b6ef;
+  --row-hover: rgba(255, 255, 255, 0.05);
+  --pill-warning-bg: rgba(250, 178, 25, 0.16);
+  --pill-good-bg: rgba(12, 163, 12, 0.18);
+  --pill-critical-bg: rgba(208, 59, 59, 0.22);
+  --pill-info-bg: rgba(57, 135, 229, 0.2);
 }
 
 * {
@@ -178,9 +210,9 @@ a {
   font-variant-numeric: proportional-nums;
 }
 
-.tile .value.good { color: var(--status-good); }
-.tile .value.warning { color: #b3790f; }
-.tile .value.critical { color: var(--status-critical); }
+.tile .value.good { color: var(--good-text); }
+.tile .value.warning { color: var(--warning-text); }
+.tile .value.critical { color: var(--critical-text); }
 
 table {
   width: 100%;
@@ -203,7 +235,7 @@ th {
 }
 
 tr:hover td {
-  background: rgba(0,0,0,0.015);
+  background: var(--row-hover);
 }
 
 .status-pill {
@@ -215,10 +247,10 @@ tr:hover td {
   text-transform: uppercase;
 }
 
-.status-processed { background: rgba(12,163,12,0.12); color: var(--status-good); }
-.status-processing { background: rgba(42,120,214,0.12); color: var(--series-1); }
-.status-quarantined { background: rgba(250,178,25,0.18); color: #8a5c00; }
-.status-error { background: rgba(208,59,59,0.12); color: var(--status-critical); }
+.status-processed { background: var(--pill-good-bg); color: var(--good-text); }
+.status-processing { background: var(--pill-info-bg); color: var(--info-text); }
+.status-quarantined { background: var(--pill-warning-bg); color: var(--warning-text); }
+.status-error { background: var(--pill-critical-bg); color: var(--critical-text); }
 
 .classification-pill {
   display: inline-block;
@@ -322,15 +354,23 @@ input, select, textarea {
   width: 360px;
 }
 
+/* A real <button> so the role picker is keyboard-reachable; these overrides
+   undo the app's default filled-button look. */
 .login-card .demo-user {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 0.5rem;
   cursor: pointer;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.9rem;
+  text-align: left;
 }
 
 .login-card .demo-user:hover {
@@ -349,9 +389,9 @@ input, select, textarea {
   align-items: center;
 }
 
-.confidence-high { color: var(--status-good); }
-.confidence-medium { color: #8a5c00; }
-.confidence-low { color: var(--status-critical); }
+.confidence-high { color: var(--good-text); }
+.confidence-medium { color: var(--warning-text); }
+.confidence-low { color: var(--critical-text); }
 .confidence-manual { color: var(--series-1); }
 
 .line-item-row {
@@ -363,7 +403,7 @@ input, select, textarea {
 }
 
 .outlier-flag {
-  color: var(--status-critical);
+  color: var(--critical-text);
   font-weight: 700;
 }
 
@@ -395,15 +435,15 @@ input, select, textarea {
   font-size: 1.05rem;
 }
 
-.assurance-audit .headline { color: var(--status-good); }
+.assurance-audit .headline { color: var(--good-text); }
 .assurance-review .headline { color: var(--series-1); }
-.assurance-compilation .headline { color: #8a5c00; }
-.assurance-none .headline { color: var(--status-critical); }
+.assurance-compilation .headline { color: var(--warning-text); }
+.assurance-none .headline { color: var(--critical-text); }
 .assurance-unknown .headline { color: var(--text-muted); }
 
-.flag-good { color: var(--status-good); font-weight: 600; }
-.flag-warning { color: #8a5c00; font-weight: 600; }
-.flag-critical { color: var(--status-critical); font-weight: 600; }
+.flag-good { color: var(--good-text); font-weight: 600; }
+.flag-warning { color: var(--warning-text); font-weight: 600; }
+.flag-critical { color: var(--critical-text); font-weight: 600; }
 
 .ratio-category-header td {
   background: var(--page-plane);
@@ -433,6 +473,10 @@ input, select, textarea {
   position: fixed;
   z-index: 1000;
   max-width: 340px;
+  /* Kept in sync with POPUP_MAX_H in HoverTooltip.tsx, which uses it to decide
+     whether to flip the popup above the trigger. */
+  max-height: 220px;
+  overflow-y: auto;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -484,4 +528,82 @@ input, select, textarea {
 
 .red-flags-list li {
   margin-bottom: 0.35rem;
+}
+
+/* --- Utilities added in the polish pass --- */
+
+/* Wide tables scroll inside their own card instead of pushing the page
+   sideways on a narrow window or a projector at low resolution. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A long filename must wrap rather than shove the status pills off-screen. */
+.statement-title {
+  font-size: 1.4rem;
+  margin: 0 0 0.25rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.file-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--gridline);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.link-button {
+  border: none;
+  background: transparent;
+  color: var(--series-1);
+  padding: 0.1rem 0.25rem;
+  font-size: 0.82rem;
+  text-decoration: underline;
+}
+
+.error-detail-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  background: var(--page-plane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  margin: 0.4rem 0 0;
+}
+
+/* Label text that only screen readers need. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard users need to see where they are - the default outline is removed
+   by the button reset above on some engines. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
 }
