@@ -10,6 +10,9 @@
 #      share with teammates who need to upload/edit (editor/steward/admin
 #      roles). Leaving it unset means ANYONE with the link can trigger
 #      billed Claude API calls - the app logs a startup warning if so.
+#   3. Optionally set STEWARD_PASSWORD / ADMIN_PASSWORD to give the
+#      dana_steward / admin demo accounts their own password instead of the
+#      shared one above.
 #
 # Free tier (current setting): no persistent disk, so the SQLite database
 # resets on every restart/redeploy, and the service spins down after 15
@@ -32,6 +35,10 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: UPLOAD_ROLE_PASSWORD
+        sync: false
+      - key: STEWARD_PASSWORD
+        sync: false
+      - key: ADMIN_PASSWORD
         sync: false
       - key: SESSION_COOKIE_SECURE
         value: "true"

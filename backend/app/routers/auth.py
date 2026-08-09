@@ -14,13 +14,19 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def list_demo_users(db: Session = Depends(get_db)):
     """Public endpoint powering the login page's role picker.
 
-    `upload_password_required` lets the UI show the shared-password step only
-    when one is actually enforced, instead of prompting for a password the
-    backend would accept anything for."""
+    Each user's own `password_required` lets the UI show the password step
+    only for accounts that actually have one enforced, instead of prompting
+    for a password the backend would accept anything for."""
     users = db.query(User).order_by(User.role.desc()).all()
     return {
-        "users": [{"username": u.username, "role": u.role} for u in users],
-        "upload_password_required": auth_module.upload_password_configured(),
+        "users": [
+            {
+                "username": u.username,
+                "role": u.role,
+                "password_required": auth_module.user_password_required(u.username, u.role),
+            }
+            for u in users
+        ],
     }
 
 
@@ -30,7 +36,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     if not user:
         raise HTTPException(status_code=404, detail="Unknown demo user")
 
-    if not auth_module.check_upload_role_password(user.role, payload.password):
+    if not auth_module.check_upload_role_password(user.username, user.role, payload.password):
         raise HTTPException(status_code=403, detail="Incorrect password for this role")
 
     token = auth_module.create_session(user)

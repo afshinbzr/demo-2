@@ -6,16 +6,15 @@ import { useAuth } from "../AuthContext";
 interface DemoUser {
   username: string;
   role: string;
+  password_required: boolean;
 }
 
 interface DemoUsersResponse {
   users: DemoUser[];
-  upload_password_required: boolean;
 }
 
 export default function Login() {
   const [demoUsers, setDemoUsers] = useState<DemoUser[]>([]);
-  const [passwordRequired, setPasswordRequired] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState<DemoUser | null>(null);
   const [password, setPassword] = useState("");
@@ -29,7 +28,6 @@ export default function Login() {
       .get<DemoUsersResponse>("/api/auth/demo_users")
       .then((d) => {
         setDemoUsers(d.users);
-        setPasswordRequired(d.upload_password_required);
         setLoadError(null);
       })
       .catch(() => setLoadError("Could not reach the server. Is the backend running?"));
@@ -57,9 +55,10 @@ export default function Login() {
   }
 
   function pick(u: DemoUser) {
-    // Only stop for a password when one is actually enforced server-side -
-    // otherwise the prompt would accept any input, which reads as broken.
-    if (u.role === "viewer" || !passwordRequired) {
+    // Only stop for a password when one is actually enforced server-side for
+    // THIS account - otherwise the prompt would accept any input, which
+    // reads as broken.
+    if (!u.password_required) {
       doLogin(u.username);
     } else {
       setError(null);
@@ -106,17 +105,17 @@ export default function Login() {
             </div>
             <p className="muted">
               This role can upload and edit data, which can trigger a billed AI request —
-              enter the shared team password to continue.
+              enter this account's password to continue.
             </p>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <label htmlFor="team-password" className="visually-hidden">
-                Team password
+                Password
               </label>
               <input
                 id="team-password"
                 type="password"
                 autoFocus
-                placeholder="Team password"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => {

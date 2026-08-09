@@ -42,22 +42,37 @@ def seed_demo_users(db: Session) -> None:
     db.commit()
 
 
-def upload_password_configured() -> bool:
-    """Whether a shared upload password is actually enforced. The login UI reads
-    this so it doesn't present a password box that accepts anything."""
-    return bool(os.environ.get("UPLOAD_ROLE_PASSWORD"))
+# Specific demo accounts that get their own password instead of the shared
+# team one - set the matching env var to require it. Falls back to
+# UPLOAD_ROLE_PASSWORD (or the open gate) for any username not listed here.
+PER_USER_PASSWORD_ENV = {
+    "dana_steward": "STEWARD_PASSWORD",
+    "admin": "ADMIN_PASSWORD",
+}
 
 
-def check_upload_role_password(role: str, password: str | None) -> bool:
+def user_password_required(username: str, role: str) -> bool:
+    """Whether this specific account actually has a password enforced right
+    now. The login UI reads this per-user so it only shows a password box
+    for accounts that need one, instead of one global flag for every
+    editor/steward/admin account."""
+    if role not in UPLOAD_ROLES:
+        return False
+    env_var = PER_USER_PASSWORD_ENV.get(username, "UPLOAD_ROLE_PASSWORD")
+    return bool(os.environ.get(env_var))
+
+
+def check_upload_role_password(username: str, role: str, password: str | None) -> bool:
     """Viewer is always free to log into (view-only, costs nothing). Roles
     that can upload/edit - which can trigger a paid Claude API call - require
-    a shared password via the UPLOAD_ROLE_PASSWORD env var. If that env var
-    isn't set at all, the gate stays open (matches pre-existing local-dev
-    behavior); main.py logs a startup warning so this isn't silently
-    insecure once actually deployed."""
+    a password: either an account-specific one (PER_USER_PASSWORD_ENV) or the
+    shared UPLOAD_ROLE_PASSWORD. If neither env var is set for this account,
+    the gate stays open (matches pre-existing local-dev behavior); main.py
+    logs a startup warning so this isn't silently insecure once deployed."""
     if role not in UPLOAD_ROLES:
         return True
-    expected = os.environ.get("UPLOAD_ROLE_PASSWORD")
+    env_var = PER_USER_PASSWORD_ENV.get(username, "UPLOAD_ROLE_PASSWORD")
+    expected = os.environ.get(env_var)
     if not expected:
         return True
     return bool(password) and hmac.compare_digest(password, expected)
